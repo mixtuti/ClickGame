@@ -1,0 +1,431 @@
+<HTML>
+<HEAD>
+<title>クリック王～防げ腱鞘炎～</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<!--外部読み込み-->
+<script src="prototype.js"></script>
+<!--直接記述-->
+<script type="text/javascript">
+///ランキングにスコア報告
+function rankAdd(){
+	rankadd_finished = false;
+	var param = "name="+$("name").value+"&score="+score;
+	new Ajax.Request(						//Ajaxコール
+		"api/rank_add.php",					//APIページ
+		{
+			method     : "get",
+			onSuccess  : rankAddSucceed,	//成功時のコールバック関数
+			onFailure  : rankAddFailure,	//失敗時のコールバック関数
+			parameters : param				//引数URL形式
+		}
+	);
+}
+function rankAddSucceed(xhrObject){
+	try{
+		result = eval('('+xhrObject.responseText+')');
+		if(result.error){
+			alert("ランキング登録結果の戻り値が不正");
+		}
+	}catch(e){
+		alert("ランキング登録結果の戻り値が不正");
+	}
+	rankadd_finished = true;
+}
+function rankAddFailure(){
+	alert("ランキング登録失敗");
+	rankadd_finished = true;
+}
+
+///ランキング取得
+function rankGet(){
+	rankget_finished = false;
+	new Ajax.Request(						//Ajaxコール
+		"api/rank_get.php",					//APIページ
+		{
+			method     : "get",
+			onSuccess  : rankGetSucceed,	//成功時のコールバック関数
+			onFailure  : rankGetFailure,	//失敗時のコールバック関数
+			parameters : ""					//引数URL形式
+		}
+	);
+}
+function rankGetSucceed(xhrObject){
+	try{
+		result = eval('('+xhrObject.responseText+')');
+		if(result.error){
+			alert("ランキング取得データが不正");
+			ranking = makeDummyRank();
+		}else{
+			ranking = result.ranking;
+		}
+	}catch(e){
+		alert("ランキング取得データが不正");
+		ranking = makeDummyRank();
+	}
+	rankget_finished = true;
+}
+function rankGetFailure(){
+	alert("ランキング取得失敗");
+	ranking = makeDummyRank();
+	rankget_finished = true;
+}
+
+function makeDummyRank(){
+	return [{name:"OEC", score:150}, {name:"OEC", score:120}, {name:"OEC", score:90}, {name:"OEC", score:60}, {name:"OEC", score:30}];
+}
+
+
+
+var c;						//キャンバス
+var ctx;					//キャンバスコンテキスト
+var img_anna;				//あんなちゃん画像
+
+var scene_no	= 0;		//シーン番号
+var scene_work	= 0;		//汎用シーンワーク
+var timer		= 0;		//汎用タイマー
+var blink_flag	= false;	//汎用点滅フラグ
+var blink_speed = 16;		//汎用点滅スピード
+var blink_count	= 16;		//汎用点滅カウンタ
+var score		= 0;		//スコア(クリック回数)
+
+var click_x		= 0;		//ゲーム中のクリック表示X
+var click_y		= 0;		//ゲーム中のクリック表示Y
+var click_timer	= 0;		//ゲーム中のクリック表示時間
+
+var ranking		= null;		//ランキング結果の入れ物
+var rankadd_finished	= false;
+var rankget_finished	= false;
+
+///矢印キーストロークキーコード
+var KEY = { RIGHT:39, UP:38, LEFT:37, DOWN:40 };
+///矢印キー押下状態
+var input = {
+	right:		false,
+	up:			false,
+	left:		false,
+	down:		false,
+	mouse_down:	false,
+	mouse_up:	true,
+};
+///キーを押した
+function keydown(e){
+	switch(e.keyCode){
+		case KEY.RIGHT: input.right = true; break;
+		case KEY.UP:    input.up    = true; break;
+		case KEY.LEFT:  input.left  = true; break;
+		case KEY.DOWN:  input.down  = true; break;
+	}
+}
+///キーを離した
+function keyup(e){
+	switch(e.keyCode){
+		case KEY.RIGHT: input.right = false; break;
+		case KEY.UP:    input.up    = false; break;
+		case KEY.LEFT:  input.left  = false; break;
+		case KEY.DOWN:  input.down  = false; break;
+	}
+}
+
+///マウス押した
+function mousedown(){
+	input.mouse_down = true;
+	input.mouse_up = false;
+	
+	//スコア加算(非同期呼び出しなんでゲームループ内じゃなくここで数えてます..)
+	if(scene_no==1 && scene_work==2){
+		click_x = Math.floor(Math.random()*540);
+		click_y = 20+Math.floor(Math.random()*560);
+		click_timer = 10;
+		score ++;
+	}
+}
+///マウス離した
+function mouseup(){
+	input.mouse_down = false;
+	input.mouse_up = true;
+}
+
+
+///初期化
+function init()
+{
+	//コンテキスト取得
+	c = $("canvas");
+	ctx = c.getContext("2d");
+	
+	//あんなちゃん読み込み
+	img_anna = new Image();
+	img_anna.src = "img/anna.png";
+	
+	loop();
+}
+
+///定期実行
+function loop()
+{
+	//画面クリア
+	ctx.fillRect(0, 0, c.width, c.height);
+	
+	//汎用点滅カウンタ更新
+	blink_count --;
+	if(blink_count <= 0){
+		blink_flag = blink_flag ? false : true;
+		blink_count = blink_speed;
+	}
+	
+	var old_scene_no = scene_no;
+	switch(scene_no){
+	case 0:	//スタート画面
+		scene_start();
+		break;
+	case 1:	//ゲーム中
+		scene_game();
+		break;
+	case 2:	//ゲーム終了
+		scene_gameover();
+		break;
+	case 3:	//ランキング表示
+		scene_ranking();
+		break;
+	}
+	if(old_scene_no != scene_no){
+		scene_work = 0;
+		timer = 0;
+		blink_flag = false;
+		blink_count = 20;
+		blink_speed = 20;
+	}
+	
+	//次フレーム呼び出し
+	setTimeout(loop, 33);
+}
+
+///スタート画面
+function scene_start()
+{
+	switch(scene_work){
+	case 0:
+		score = 0;
+		scene_work = 1;
+	case 1:
+		if(input.mouse_down){
+			scene_work = 2;
+			blink_speed = 2;
+			timer = 59;
+		}
+		break;
+	case 2:
+		timer --;
+		if(timer < 0){
+			scene_no = 1;
+			return;
+		}
+		break;
+	}
+	
+	ctx.font = "80pt Arial";
+	ctx.textAlign = "center";
+	ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+	ctx.strokeText("クリック王", 300, 200);
+	
+	ctx.font = "20pt Arial";
+	ctx.textAlign = "center";
+	ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+	ctx.strokeText("～防げ腱鞘炎～", 300, 250);
+	
+	if(blink_flag){
+		ctx.font = "20pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText("CLICK TO START", 300, 500);
+	}
+}
+
+///ゲーム中
+function scene_game()
+{
+	switch(scene_work){
+	case 0:	//ゲーム開始時初期化
+		timer = 179;
+		scene_work = 1;
+	case 1:	//ゲーム開始前カウンタ
+		timer --;
+		if(timer <= 0){
+			timer = 599;
+			scene_work = 2;
+		}
+		break;
+	case 2:	//ゲーム中
+		timer --;
+		if(timer <= 0){
+			timer = 120;
+			scene_work = 3;
+		}
+		break;
+	case 3:	//タイムアップ
+		timer --;
+		if(timer <= 0){
+			scene_no = 2;
+			return;
+		}
+		break;
+	}
+	
+	switch(scene_work){
+	case 0:
+	case 1:
+		var pt = 60+60-timer%60;
+		ctx.font = pt+"pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText(Math.floor(timer/60)+1, 300, 350);
+		break;
+	case 2:
+		if(timer > 580){
+			var pt = 60+(20-timer%20)*3;
+			ctx.font = pt+"pt Arial";
+			ctx.textAlign = "center";
+			ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+			ctx.strokeText("START!:", 300, 300);
+		}
+		
+		ctx.font = "20pt Arial";
+		ctx.textAlign = "right";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText("残り時間:"+Math.floor(timer/60), 580, 40);
+		
+		ctx.font = "120pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText(score, 300, 350);
+		
+		click_timer --;
+		if(click_timer > 0){
+			var pt = click_timer*4;
+			ctx.font = pt+"pt Arial";
+			ctx.textAlign = "left";
+			ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+			ctx.strokeText("CLICK!", click_x, click_y);
+		}
+		break;
+	case 3:
+		ctx.font = "80pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText("そこまで！", 300, 330);
+		break;
+	}
+}
+
+///ゲーム終了
+function scene_gameover()
+{
+	switch(scene_work){
+	case 0:	//ゲームオーバー初期化
+		timer = 120;
+		scene_work = 1;
+	case 1:	//ゲームオーバーカウンタ
+		timer --;
+		if(timer <= 0){
+			scene_work = 2;
+		}
+		break;
+	case 2:	//ランキング登録
+		rankAdd();
+		scene_work = 3;
+	case 3:	//ランキング登録完了
+		if(rankadd_finished){
+			scene_no = 3;
+			return;
+		}
+		break;
+	}
+	
+	switch(scene_work){
+	case 0:
+	case 1:
+		ctx.font = "80pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText("結果発表", 300, 100);
+		
+		ctx.font = "40pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText("クリック回数: "+score+" 回", 300, 200);
+		
+		ctx.drawImage(img_anna, 0, 0, 60, 60, 300-60, 400-60, 120, 120);
+		
+		if(blink_flag){
+			ctx.font = "20pt Arial";
+			ctx.textAlign = "center";
+			ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+			ctx.strokeText("お疲れ様でした♡", 300, 500);
+		}
+		break;
+	case 2:
+	case 3:
+		ctx.font = "80pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText("登録中...", 300, 330);
+		break;
+	}
+}
+
+///ランキング表示
+function scene_ranking()
+{
+	switch(scene_work){
+	case 0:	//ランキング表示前初期化
+		rankGet();	//ランキング取得
+		scene_work = 1;
+	case 1:	//ランキング取得中
+		if(rankget_finished){
+			timer = 180;
+			scene_work = 2;
+		}
+		break;
+	case 2:	//ランキング表示カウンタ
+		timer --;
+		if(timer <= 0){
+			scene_no = 0;
+			return;
+		}
+		break;
+	}
+	
+	switch(scene_work){
+	case 0:
+	case 1:
+		ctx.font = "80pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText("取得中...", 300, 330);
+		break;
+	case 2:
+		ctx.font = "80pt Arial";
+		ctx.textAlign = "center";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		ctx.strokeText("ランキング", 300, 140);
+		
+		ctx.font = "40pt Arial";
+		ctx.textAlign = "left";
+		ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+		var rank_no = ["1ST", "2ND", "3RD", "4TH", "5TH"];
+		var rank_y = 240;
+		var ied = (ranking.length >= 5) ? 5 : ranking.length;
+		for(var i=0 ; i<ied ; i++, rank_y+=60){
+			ctx.strokeText(rank_no[i], 50, rank_y); ctx.strokeText(ranking[i].name, 200, rank_y); ctx.strokeText(ranking[i].score+"回", 350, rank_y);
+		}
+		break;
+	}
+}
+</script>
+</HEAD>
+<BODY onload="init();" onkeydown="keydown(event);" onkeyup="keyup(event);">
+名前入力:<input id="name" type="text" size="3" maxlength="3" value="OEC" style="width:40px;"/>(3文字まで)<br />
+<canvas id="canvas" width="600" height="600" style="background-color:#000;" 
+	onmousedown="mousedown();" onmouseup="mouseup();" onselectstart="return false;"></canvas><br />
+</BODY>
+</HTML>
